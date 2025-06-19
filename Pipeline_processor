@@ -1,0 +1,104 @@
+// pipeline_processor.v - 4-stage pipelined processor
+`timescale 1ns / 1ps
+
+module pipeline_processor (
+    input clk,
+    input reset
+);
+    reg [7:0] PC;
+    reg [7:0] instruction_memory [0:15];
+    reg [7:0] register_file [0:3];
+    reg [7:0] data_memory [0:15];
+
+    reg [7:0] IF_ID, ID_EX, EX_MEM, MEM_WB;
+    reg [7:0] ALU_result;
+
+    // Instruction Fetch (IF)
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            PC <= 0;
+        end else begin
+            IF_ID <= instruction_memory[PC];
+            PC <= PC + 1;
+        end
+    end
+
+    // Instruction Decode (ID)
+    reg [1:0] opcode_ID;
+    reg [1:0] rd_ID, rs1_ID, rs2_ID;
+    always @(posedge clk) begin
+        opcode_ID <= IF_ID[7:6];
+        rd_ID     <= IF_ID[5:4];
+        rs1_ID    <= IF_ID[3:2];
+        rs2_ID    <= IF_ID[1:0];
+        ID_EX     <= IF_ID;
+    end
+
+    // Execute (EX)
+    always @(posedge clk) begin
+        case (opcode_ID)
+            2'b00: ALU_result <= register_file[rs1_ID] + register_file[rs2_ID]; // ADD
+            2'b01: ALU_result <= register_file[rs1_ID] - register_file[rs2_ID]; // SUB
+            2'b10: ALU_result <= data_memory[register_file[rs1_ID]];           // LOAD
+            default: ALU_result <= 8'b0;
+        endcase
+        EX_MEM <= ID_EX;
+    end
+
+    // Write Back (WB)
+    always @(posedge clk) begin
+        if (EX_MEM[7:6] != 2'b11)
+            register_file[EX_MEM[5:4]] <= ALU_result;
+        MEM_WB <= EX_MEM;
+    end
+
+endmodule
+
+
+#TESTBENCH 
+
+// tb_pipeline_processor.v - Testbench for 4-stage pipelined processor
+`timescale 1ns / 1ps
+
+module tb_pipeline_processor;
+
+    reg clk;
+    reg reset;
+
+    // Instantiate the processor
+    pipeline_processor uut (
+        .clk(clk),
+        .reset(reset)
+    );
+
+    // Clock generation
+    always #5 clk = ~clk;
+
+    initial begin
+        clk = 0;
+        reset = 1;
+
+        // Reset and preload
+        #10 reset = 0;
+
+        // Load instructions into instruction memory
+        uut.instruction_memory[0] = 8'b00010010; // ADD R0 = R0 + R2
+        uut.instruction_memory[1] = 8'b01010100; // SUB R1 = R1 - R0
+        uut.instruction_memory[2] = 8'b10001000; // LOAD R0 = MEM[R2]
+
+        // Initialize registers
+        uut.register_file[0] = 8'd10;
+        uut.register_file[1] = 8'd20;
+        uut.register_file[2] = 8'd5;
+
+        // Initialize data memory
+        uut.data_memory[5] = 8'd55; // MEM[5] = 55
+
+        // Dump waveforms
+        $dumpfile("pipeline.vcd");
+        $dumpvars(0, tb_pipeline_processor);
+
+        #100 $finish;
+    end
+
+endmodule
